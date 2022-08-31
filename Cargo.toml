@@ -1,0 +1,15 @@
+[package]
+name = "file-storage"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nats = "0.23.0"
+mongodb = "2.3.0"
+mongodb-gridfs = {version = "0.2.2", features = ["tokio-runtime"]}
+
+tokio = {version = "*", features = ["full"]}
+futures = "*"
+async-compat = "*"

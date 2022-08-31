@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  mongodb:
+    image: bitnami/mongodb:latest
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - MONGODB_USERNAME=my_user
+      - MONGODB_PASSWORD=password123
+      - MONGODB_DATABASE=my_database
+    ports:
+      - 27017:27017
+  nats:
+    image: bitnami/nats:latest
+    ports:
+      - 4222:4222
+      - 6222:6222
+      - 8222:8222
+    environment:
+      - NATS_USERNAME=nats
