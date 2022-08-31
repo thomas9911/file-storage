@@ -4,6 +4,8 @@ services:
     image: bitnami/mongodb:latest
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
+      - MONGODB_ROOT_USER=root
+      - MONGODB_ROOT_PASSWORD=root
       - MONGODB_USERNAME=my_user
       - MONGODB_PASSWORD=password123
       - MONGODB_DATABASE=my_database

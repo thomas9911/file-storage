@@ -1,79 +1,93 @@
 use async_compat::CompatExt;
 use futures::stream::StreamExt;
 use mongodb::bson::{doc, Document};
+use mongodb::error::Error as MongoDBError;
+use mongodb::error::ErrorKind;
+use mongodb::error::WriteError;
+use mongodb::error::WriteFailure;
+use mongodb::options::IndexOptions;
+use mongodb::IndexModel;
 use mongodb::{options::ClientOptions, Client};
 use mongodb_gridfs::options::GridFSFindOptions;
 use mongodb_gridfs::GridFSBucket;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
+use warp::reject::{Reject, Rejection};
+use warp::Filter;
+use warp::Reply;
 
-type GeneralResult = Result<(), Box<dyn std::error::Error>>;
+type GeneralResult<T> = Result<T, Box<dyn std::error::Error>>;
+
+const INTERNAL_DB: &'static str = "_internal";
+
+#[derive(Debug)]
+struct Asdf {
+    info: String,
+}
+
+impl Reject for Asdf {}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Bucket {
+    name: String,
+}
 
 #[tokio::main]
-async fn main() -> GeneralResult {
-    let client_options =
-        ClientOptions::parse("mongodb://my_user:password123@localhost:27017/my_database").await?;
+async fn main() -> GeneralResult<()> {
+    let client_options = ClientOptions::parse("mongodb://root:root@localhost:27017").await?;
     let client = Client::with_options(client_options)?;
-    let db = client.database("my_database");
+    let db = client.database(INTERNAL_DB);
+    let buckets = db.collection::<Bucket>("buckets");
 
-    let mut bucket = GridFSBucket::new(db, None);
-    bucket.drop().await?;
+    let unique_index = IndexOptions::builder().unique(true).build();
+    let index = IndexModel::builder()
+        .keys(doc! {"name": 1})
+        .options(unique_index)
+        .build();
+    buckets.create_index(index, None).await?;
 
-    let name = "text.txt";
+    // let resize_binary = warp::post()
+    //     .and(warp::path("basic"))
+    //     .and(warp::header::<String>("content-type"))
+    //     .and(warp::filters::body::aggregate())
+    //     .and(warp::query::<ResizeOptions>())
+    //     .then(resize_binary_endpoint);
 
-    save_file(&mut bucket, name).await?;
-    get_file(&bucket, name).await?;
+    let basic_endpoint = warp::any()
+        .map(move || client.clone())
+        .and(warp::filters::path::param::<String>())
+        .and(warp::post())
+        .and_then(create_bucket);
 
-    Ok(())
-}
+    let basic_route = warp::path("basic").and(basic_endpoint);
 
-async fn save_file(bucket: &mut GridFSBucket, name: &str) -> GeneralResult {
-    let mut path = PathBuf::from("in_folder");
-    path.push(name);
-
-    let file = tokio::fs::File::open(path).await?;
-
-    let _id = bucket.upload_from_stream(name, file.compat(), None).await?;
-
-    Ok(())
-}
-
-async fn get_file(bucket: &GridFSBucket, name: &str) -> GeneralResult {
-    let mut cursor = bucket
-        .find(doc! {"filename": name}, GridFSFindOptions::default())
-        .await?;
-
-    while let Some(doc) = cursor.next().await {
-        // dbg!(&doc);
-        if let Err(e) = store_to_path(&bucket, "tmp_folder".into(), doc).await {
-            println!("error: {}", e)
-        };
-    }
+    let routes = basic_route;
+    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 
     Ok(())
 }
 
-async fn store_to_path(
-    bucket: &GridFSBucket,
-    mut folder: PathBuf,
-    doc: Result<Document, mongodb::error::Error>,
-) -> GeneralResult {
-    let doc = doc?;
-    let id = doc.get_object_id("_id")?;
-    let file_length = doc.get_i64("length").unwrap_or(0);
-    let (mut cursor, filename) = bucket.open_download_stream_with_filename(id).await?;
+async fn create_bucket(client: Client, input: String) -> Result<impl Reply, Rejection> {
+    let db = client.database(INTERNAL_DB);
+    let buckets = db.collection::<Bucket>("buckets");
+    
+    match buckets.insert_one(Bucket { name: input }, None).await {
+        Ok(_) => (),
+        Err(MongoDBError { kind, .. })
+            if matches!(
+                &*kind,
+                ErrorKind::Write(WriteFailure::WriteError(x)) if x.code == 11000,
+            ) =>
+        {
+            ()
+        }
+        Err(e) => {
+            return Err(warp::reject::custom(Asdf {
+                info: e.kind.to_string(),
+            }))
+        }
+    };
 
-    folder.push(filename);
-    let mut file = tokio::fs::File::create(folder).await?;
-    while let Some(buffer) = cursor.next().await {
-        file.write_all(&buffer).await?;
-        file.flush().await?;
-    }
-
-    let metadata = file.metadata().await?;
-    if metadata.len() != (file_length as u64) {
-        return Err("File stored and file written have different size".into());
-    }
-
-    Ok(())
+    Ok("oke")
 }

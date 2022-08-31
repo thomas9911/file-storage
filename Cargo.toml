@@ -2,7 +2,7 @@
 name = "file-storage"
 version = "0.1.0"
 edition = "2021"
-
+default-run = "file-storage"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -13,3 +13,5 @@ mongodb-gridfs = {version = "0.2.2", features = ["tokio-runtime"]}
 tokio = {version = "*", features = ["full"]}
 futures = "*"
 async-compat = "*"
+warp = "*"
+serde = {version = "1.0", features = ["derive"]}
