@@ -439,6 +439,7 @@ dependencies = [
  "nats",
  "serde",
  "tokio",
+ "tokio-util 0.7.3",
  "warp",
 ]
 
