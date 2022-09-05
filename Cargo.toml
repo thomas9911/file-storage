@@ -9,10 +9,11 @@ default-run = "file-storage"
 nats = "0.23.0"
 mongodb = "2.3.0"
 mongodb-gridfs = {version = "0.2.2", features = ["tokio-runtime"]}
-
 tokio = {version = "1.20", features = ["full"]}
 futures = "0.3"
 async-compat = "0.2"
 warp = "0.3"
 serde = {version = "1.0", features = ["derive"]}
 tokio-util = { version = "0.7.3", features = ["io"] }
+log = "0.4"
+pretty_env_logger = "0.4"

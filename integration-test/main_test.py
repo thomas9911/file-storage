@@ -71,7 +71,25 @@ def test_create_object():
     assert 400 == r.status_code
     assert {"bucket": "my_object_bucket", "info": "bucket is not empty"} == r.json()
 
-    # r = requests.delete(url + "?purge=true")
+    r = requests.delete(url + "/image.jpg")
 
-    # assert 200 == r.status_code
-    # assert {"bucket": "my_object_bucket", "info": "OK"} == r.json()
+    assert 200 == r.status_code
+    assert {
+        "bucket": "my_object_bucket",
+        "filename": "image.jpg",
+        "info": "OK",
+    } == r.json()
+
+    r = requests.delete(url + "/image.jpg")
+
+    assert 404 == r.status_code
+    assert {
+        "bucket": "my_object_bucket",
+        "filename": "image.jpg",
+        "info": "object not found",
+    } == r.json()
+
+    r = requests.delete(url + "?purge=true")
+
+    assert 200 == r.status_code
+    assert {"bucket": "my_object_bucket", "info": "OK"} == r.json()

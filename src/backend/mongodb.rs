@@ -169,6 +169,46 @@ impl warp::Reply for CreateObjectResult {
     }
 }
 
+pub struct DeleteObjectResult {
+    bucket: String,
+    filename: String,
+    message: Option<&'static str>,
+}
+
+impl warp::Reply for DeleteObjectResult {
+    fn into_response(self) -> warp::reply::Response {
+        let info = if let Some(message) = self.message {
+            message
+        } else {
+            "OK"
+        };
+
+        let message = format!(
+            r#"{{"bucket": {:?}, "filename": {:?}, "info": {:?}}}"#,
+            self.bucket, self.filename, info
+        );
+
+        let mut response = Response::new(message.into());
+        response
+            .headers_mut()
+            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+        match self.message {
+            Some("object not found") => {
+                *response.status_mut() = StatusCode::NOT_FOUND;
+            }
+            Some(_) => {
+                *response.status_mut() = StatusCode::BAD_REQUEST;
+            }
+            None => {
+                *response.status_mut() = StatusCode::OK;
+            }
+        }
+
+        response
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Bucket {
     name: String,
@@ -476,6 +516,54 @@ pub async fn get_object(
         warp::hyper::body::Body::wrap_stream(cursor.map::<Result<_, Infallible>, _>(|x| Ok(x)));
 
     Ok(warp::reply::Response::new(stream))
+}
+
+pub async fn delete_object(
+    client: Client,
+    bucket_name: String,
+    object_name: String,
+) -> Result<DeleteObjectResult, Rejection> {
+    let db = client.database("organisation_id");
+    let bucket_options = GridFSBucketOptions::builder()
+        .bucket_name(bucket_name.to_string())
+        .build();
+    let bucket = GridFSBucket::new(db, Some(bucket_options));
+
+    let mut cursor = bucket
+        .find(
+            doc! {"filename": &object_name},
+            GridFSFindOptions::builder().limit(Some(1)).build(),
+        )
+        .await
+        .map_err(|e| {
+            warp::reject::custom(CustomError {
+                info: e.to_string(),
+            })
+        })?;
+
+    let id = if let Some(Ok(object_doc)) = cursor.next().await {
+        object_doc
+            .get_object_id("_id")
+            .expect("all documentent have _id")
+    } else {
+        return Ok(DeleteObjectResult {
+            bucket: bucket_name,
+            filename: object_name,
+            message: Some("object not found"),
+        });
+    };
+
+    bucket.delete(id).await.map_err(|e| {
+        warp::reject::custom(CustomError {
+            info: e.to_string(),
+        })
+    })?;
+
+    Ok(DeleteObjectResult {
+        bucket: bucket_name,
+        filename: object_name,
+        message: None,
+    })
 }
 
 pub async fn make_client() -> crate::GeneralResult<Client> {
