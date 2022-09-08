@@ -62,3 +62,111 @@ async fn test_delete_bucket() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_create_object() -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let bucket = "test_create_bucket";
+
+    client
+        .delete(format!("{}/{}?purge=true", URL, bucket))
+        .send()
+        .await?;
+
+    let res = client.post(format!("{}/{}", URL, bucket)).send().await?;
+
+    assert_eq!(reqwest::StatusCode::OK, res.status());
+
+    let file = tokio::fs::File::open("./image.jpg").await?;
+    let body = reqwest::Body::from(file);
+
+    let res = client
+        .post(format!("{}/{}/image.jpg", URL, bucket))
+        .body(body)
+        .header("content-type", "image/jpeg")
+        .send()
+        .await?;
+
+    assert_eq!(reqwest::StatusCode::OK, res.status());
+    assert_eq!(
+        json!({
+            "bucket": bucket,
+            "info": "OK",
+            "created": true,
+            "filename": "image.jpg",
+        }),
+        res.json::<Value>().await?
+    );
+
+    let file = tokio::fs::File::open("./image.jpg").await?;
+    let body = reqwest::Body::from(file);
+
+    let res = client
+        .post(format!("{}/{}/image.jpg", URL, bucket))
+        .body(body)
+        .header("content-type", "image/jpeg")
+        .send()
+        .await?;
+
+    assert_eq!(reqwest::StatusCode::CONFLICT, res.status());
+    assert_eq!(
+        json!({
+            "bucket": bucket,
+            "info": "Object already exists",
+            "created": false,
+            "filename": "image.jpg",
+        }),
+        res.json::<Value>().await?
+    );
+
+    let res = client.delete(format!("{}/{}", URL, bucket)).send().await?;
+
+    assert_eq!(reqwest::StatusCode::BAD_REQUEST, res.status());
+    assert_eq!(
+        json!({"bucket": bucket, "info": "bucket is not empty"}),
+        res.json::<Value>().await?
+    );
+
+    let res = client
+        .delete(format!("{}/{}/image.jpg", URL, bucket))
+        .send()
+        .await?;
+
+    assert_eq!(reqwest::StatusCode::OK, res.status());
+    assert_eq!(
+        json!({
+            "bucket": bucket,
+            "info": "OK",
+            "filename": "image.jpg",
+        }),
+        res.json::<Value>().await?
+    );
+
+    let res = client
+        .delete(format!("{}/{}/image.jpg", URL, bucket))
+        .send()
+        .await?;
+
+    assert_eq!(reqwest::StatusCode::NOT_FOUND, res.status());
+    assert_eq!(
+        json!({
+            "bucket": bucket,
+            "info": "object not found",
+            "filename": "image.jpg",
+        }),
+        res.json::<Value>().await?
+    );
+
+    let res = client
+        .delete(format!("{}/{}?purge=true", URL, bucket))
+        .send()
+        .await?;
+
+    assert_eq!(reqwest::StatusCode::OK, res.status());
+    assert_eq!(
+        json!({"bucket": bucket, "info": "OK"}),
+        res.json::<Value>().await?
+    );
+
+    Ok(())
+}
