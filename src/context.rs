@@ -1,5 +1,5 @@
-use crate::auth::Auth;
 use crate::backend::{Client, EMPTY_ORGANISATION};
+use crate::basic::auth::Auth;
 use warp::http::Method;
 
 pub struct Context {
@@ -48,7 +48,10 @@ impl Context {
 
     pub fn validate_request(&self) -> bool {
         if self.is_logged_in() {
-            self.auth.as_ref().unwrap().validate_request(self.method.as_str(), &self.path)
+            self.auth
+                .as_ref()
+                .unwrap()
+                .validate_request(self.method.as_str(), &self.path)
         } else {
             // do we allow public uploads?
             true

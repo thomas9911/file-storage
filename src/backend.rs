@@ -56,7 +56,7 @@ impl KeyPair {
 
 #[derive(Debug)]
 pub struct Unauthorised {
-    pub reason: String
+    pub reason: String,
 }
 
 impl warp::reject::Reject for Unauthorised {}
@@ -65,7 +65,9 @@ fn check_auth(context: &Context) -> Result<(), Rejection> {
     if context.validate_request() {
         Ok(())
     } else {
-        Err(warp::reject::custom(Unauthorised{reason: format!("Unauthorised for path {} {}", context.method, context.path)}))
+        Err(warp::reject::custom(Unauthorised {
+            reason: format!("Unauthorised for path {} {}", context.method, context.path),
+        }))
     }
 }
 
@@ -106,14 +108,7 @@ pub async fn create_object(
     let object_name = object_name.as_str().to_string();
     context.path = format!("{}/{}", bucket_name, object_name);
     check_auth(&context)?;
-    mongodb::create_object(
-        context,
-        bucket_name,
-        object_name,
-        content_type,
-        buffer,
-    )
-    .await
+    mongodb::create_object(context, bucket_name, object_name, content_type, buffer).await
 }
 
 pub async fn get_object(

@@ -43,15 +43,6 @@ async fn get_secret_from_sub(client: &Client, sub: String) -> Result<KeyPair, St
 }
 
 fn get_admin_secret(sub: &str) -> Option<KeyPair> {
-    // if let Ok(access_key) = std::env::var("FILE_STORAGE_ACCESS_KEY") {
-    //     if access_key == sub {
-    //         if let Ok(secret) = std::env::var("FILE_STORAGE_SECRET_KEY") {
-    //             return Some(KeyPair::new(access_key, secret, String::from("admin")));
-    //         }
-    //     }
-    // };
-
-    // None
     let keypair = Config::admin_key()?;
 
     if keypair.access() == sub {
