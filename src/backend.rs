@@ -54,6 +54,21 @@ impl KeyPair {
     }
 }
 
+#[derive(Debug)]
+pub struct Unauthorised {
+    pub reason: String
+}
+
+impl warp::reject::Reject for Unauthorised {}
+
+fn check_auth(context: &Context) -> Result<(), Rejection> {
+    if context.validate_request() {
+        Ok(())
+    } else {
+        Err(warp::reject::custom(Unauthorised{reason: format!("Unauthorised for path {} {}", context.method, context.path)}))
+    }
+}
+
 pub async fn setup(client: &Client) -> GeneralResult<()> {
     mongodb::setup(client).await
 }
@@ -63,31 +78,38 @@ pub async fn make_client() -> GeneralResult<Client> {
 }
 
 pub async fn create_bucket(
-    context: Context,
+    mut context: Context,
     bucket_name: String,
 ) -> Result<CreateBucketResult, Rejection> {
+    context.path = bucket_name.to_string();
+    check_auth(&context)?;
     mongodb::create_bucket(context, bucket_name).await
 }
 
 pub async fn delete_bucket(
-    context: Context,
+    mut context: Context,
     bucket_name: String,
     options: DeleteBucketOptions,
 ) -> Result<DeleteBucketResult, Rejection> {
+    context.path = bucket_name.to_string();
+    check_auth(&context)?;
     mongodb::delete_bucket(context, bucket_name, options).await
 }
 
 pub async fn create_object(
-    context: Context,
+    mut context: Context,
     bucket_name: String,
     object_name: Tail,
     content_type: String,
     buffer: impl futures::Stream<Item = Result<impl warp::Buf, warp::Error>>,
 ) -> Result<CreateObjectResult, Rejection> {
+    let object_name = object_name.as_str().to_string();
+    context.path = format!("{}/{}", bucket_name, object_name);
+    check_auth(&context)?;
     mongodb::create_object(
         context,
         bucket_name,
-        object_name.as_str().to_string(),
+        object_name,
         content_type,
         buffer,
     )
@@ -95,19 +117,25 @@ pub async fn create_object(
 }
 
 pub async fn get_object(
-    context: Context,
+    mut context: Context,
     bucket_name: String,
     object_name: Tail,
 ) -> Result<warp::reply::Response, Rejection> {
-    mongodb::get_object(context, bucket_name, object_name.as_str().to_string()).await
+    let object_name = object_name.as_str().to_string();
+    context.path = format!("{}/{}", bucket_name, object_name);
+    check_auth(&context)?;
+    mongodb::get_object(context, bucket_name, object_name).await
 }
 
 pub async fn delete_object(
-    context: Context,
+    mut context: Context,
     bucket_name: String,
     object_name: Tail,
 ) -> Result<DeleteObjectResult, Rejection> {
-    mongodb::delete_object(context, bucket_name, object_name.as_str().to_string()).await
+    let object_name = object_name.as_str().to_string();
+    context.path = format!("{}/{}", bucket_name, object_name);
+    check_auth(&context)?;
+    mongodb::delete_object(context, bucket_name, object_name).await
 }
 
 pub async fn get_keypair_with_access_key(

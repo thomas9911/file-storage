@@ -45,4 +45,13 @@ impl Context {
     pub fn is_logged_in(&self) -> bool {
         self.auth.is_some()
     }
+
+    pub fn validate_request(&self) -> bool {
+        if self.is_logged_in() {
+            self.auth.as_ref().unwrap().validate_request(self.method.as_str(), &self.path)
+        } else {
+            // do we allow public uploads?
+            true
+        }
+    }
 }

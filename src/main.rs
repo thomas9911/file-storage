@@ -1,6 +1,6 @@
-use warp::http::Method;
+use warp::http::{Method, StatusCode};
 use warp::path::{param, tail};
-use warp::Filter;
+use warp::{Filter, Rejection};
 
 pub type GeneralResult<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -28,6 +28,17 @@ fn with_base(
         .untuple_one()
         .and(warp::header::optional::<String>("authorization"))
         .then(Context::from_auth_header)
+}
+
+async fn handle_rejection(err: Rejection) -> Result<impl warp::Reply, std::convert::Infallible> {
+    if err.is_not_found() {
+        Ok(warp::reply::with_status("NOT_FOUND".to_string(), StatusCode::NOT_FOUND))
+    } else if let Some(e) = err.find::<backend::Unauthorised>() {
+        Ok(warp::reply::with_status(serde_json::json!({"error": e.reason}).to_string(), StatusCode::UNAUTHORIZED))
+    } else {
+        eprintln!("unhandled rejection: {:?}", err);
+        Ok(warp::reply::with_status("INTERNAL_SERVER_ERROR".to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+    }
 }
 
 fn basic_endpoint(client: backend::Client) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
@@ -75,7 +86,7 @@ fn basic_endpoint(client: backend::Client) -> warp::filters::BoxedFilter<(impl w
         .or(delete_object_endpoint)
         .or(get_object_endpoint);
 
-    basic_endpoint.boxed()
+    basic_endpoint.recover(handle_rejection).boxed()
 }
 
 #[tokio::main]

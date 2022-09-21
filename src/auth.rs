@@ -91,6 +91,14 @@ impl Auth {
         })
     }
 
+    pub fn validate_request(&self, method: &str, path: &str) -> bool {
+        if self.payload.path == path && self.payload.method.to_ascii_uppercase() == method {
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn auth(&self) -> &Payload {
         &self.payload
     }
