@@ -7,11 +7,11 @@ const URL: &'static str = "http://localhost:3030/api/basic";
 #[tokio::test]
 async fn test_create_bucket() -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
-    client.delete(format!("{}/test_bucket", URL)).send().await?;
+    client.delete(format!("{}/test_bucket", URL)).send().await.unwrap();
 
-    let res = client.post(format!("{}/test_bucket", URL)).send().await?;
+    let res = client.post(format!("{}/test_bucket", URL)).send().await.unwrap();
     let status_code = res.status();
-    let out: Value = res.json().await?;
+    let out: Value = res.json().await.unwrap();
 
     assert_eq!(
         json!({"bucket": "test_bucket", "created": true, "info": "OK"}),
@@ -19,9 +19,9 @@ async fn test_create_bucket() -> Result<(), Box<dyn std::error::Error>> {
     );
     assert_eq!(reqwest::StatusCode::OK, status_code);
 
-    let res = client.post(format!("{}/test_bucket", URL)).send().await?;
+    let res = client.post(format!("{}/test_bucket", URL)).send().await.unwrap();
     let status_code = res.status();
-    let out: Value = res.json().await?;
+    let out: Value = res.json().await.unwrap();
 
     assert_eq!(
         json!({"bucket": "test_bucket", "created": false, "info": "Bucket already exists"}),
@@ -38,14 +38,14 @@ async fn test_delete_bucket() -> Result<(), Box<dyn std::error::Error>> {
     client
         .post(format!("{}/test_delete_bucket", URL))
         .send()
-        .await?;
+        .await.unwrap();
 
     let res = client
         .delete(format!("{}/test_delete_bucket", URL))
         .send()
-        .await?;
+        .await.unwrap();
     let status_code = res.status();
-    let out: Value = res.json().await?;
+    let out: Value = res.json().await.unwrap();
 
     assert_eq!(json!({"bucket": "test_delete_bucket", "info": "OK"}), out);
     assert_eq!(reqwest::StatusCode::OK, status_code);
@@ -53,9 +53,9 @@ async fn test_delete_bucket() -> Result<(), Box<dyn std::error::Error>> {
     let res = client
         .delete(format!("{}/test_delete_bucket", URL))
         .send()
-        .await?;
+        .await.unwrap();
     let status_code = res.status();
-    let out: Value = res.json().await?;
+    let out: Value = res.json().await.unwrap();
 
     assert_eq!(json!({"bucket": "test_delete_bucket", "info": "OK"}), out);
     assert_eq!(reqwest::StatusCode::OK, status_code);
@@ -71,13 +71,13 @@ async fn test_create_object() -> Result<(), Box<dyn std::error::Error>> {
     client
         .delete(format!("{}/{}?purge=true", URL, bucket))
         .send()
-        .await?;
+        .await.unwrap();
 
-    let res = client.post(format!("{}/{}", URL, bucket)).send().await?;
+    let res = client.post(format!("{}/{}", URL, bucket)).send().await.unwrap();
 
     assert_eq!(reqwest::StatusCode::OK, res.status());
 
-    let file = tokio::fs::File::open("./image.jpg").await?;
+    let file = tokio::fs::File::open("./image.jpg").await.unwrap();
     let body = reqwest::Body::from(file);
 
     let res = client
@@ -85,7 +85,7 @@ async fn test_create_object() -> Result<(), Box<dyn std::error::Error>> {
         .body(body)
         .header("content-type", "image/jpeg")
         .send()
-        .await?;
+        .await.unwrap();
 
     assert_eq!(reqwest::StatusCode::OK, res.status());
     assert_eq!(
@@ -95,10 +95,10 @@ async fn test_create_object() -> Result<(), Box<dyn std::error::Error>> {
             "created": true,
             "filename": "image.jpg",
         }),
-        res.json::<Value>().await?
+        res.json::<Value>().await.unwrap()
     );
 
-    let file = tokio::fs::File::open("./image.jpg").await?;
+    let file = tokio::fs::File::open("./image.jpg").await.unwrap();
     let body = reqwest::Body::from(file);
 
     let res = client
@@ -106,7 +106,7 @@ async fn test_create_object() -> Result<(), Box<dyn std::error::Error>> {
         .body(body)
         .header("content-type", "image/jpeg")
         .send()
-        .await?;
+        .await.unwrap();
 
     assert_eq!(reqwest::StatusCode::CONFLICT, res.status());
     assert_eq!(
@@ -116,21 +116,24 @@ async fn test_create_object() -> Result<(), Box<dyn std::error::Error>> {
             "created": false,
             "filename": "image.jpg",
         }),
-        res.json::<Value>().await?
+        res.json::<Value>().await.unwrap()
     );
 
-    let res = client.delete(format!("{}/{}", URL, bucket)).send().await?;
+    // recreate client to avoid broken connection error
+    let client = reqwest::Client::new();
+
+    let res = client.delete(format!("{}/{}", URL, bucket)).send().await.unwrap();
 
     assert_eq!(reqwest::StatusCode::BAD_REQUEST, res.status());
     assert_eq!(
         json!({"bucket": bucket, "info": "bucket is not empty"}),
-        res.json::<Value>().await?
+        res.json::<Value>().await.unwrap()
     );
 
     let res = client
         .delete(format!("{}/{}/image.jpg", URL, bucket))
         .send()
-        .await?;
+        .await.unwrap();
 
     assert_eq!(reqwest::StatusCode::OK, res.status());
     assert_eq!(
@@ -139,13 +142,13 @@ async fn test_create_object() -> Result<(), Box<dyn std::error::Error>> {
             "info": "OK",
             "filename": "image.jpg",
         }),
-        res.json::<Value>().await?
+        res.json::<Value>().await.unwrap()
     );
 
     let res = client
         .delete(format!("{}/{}/image.jpg", URL, bucket))
         .send()
-        .await?;
+        .await.unwrap();
 
     assert_eq!(reqwest::StatusCode::NOT_FOUND, res.status());
     assert_eq!(
@@ -154,18 +157,18 @@ async fn test_create_object() -> Result<(), Box<dyn std::error::Error>> {
             "info": "object not found",
             "filename": "image.jpg",
         }),
-        res.json::<Value>().await?
+        res.json::<Value>().await.unwrap()
     );
 
     let res = client
         .delete(format!("{}/{}?purge=true", URL, bucket))
         .send()
-        .await?;
+        .await.unwrap();
 
     assert_eq!(reqwest::StatusCode::OK, res.status());
     assert_eq!(
         json!({"bucket": bucket, "info": "OK"}),
-        res.json::<Value>().await?
+        res.json::<Value>().await.unwrap()
     );
 
     Ok(())

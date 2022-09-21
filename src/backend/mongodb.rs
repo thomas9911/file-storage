@@ -1,18 +1,16 @@
+use crate::backend::{KeyPair, ADMIN_ORGANISATION, EMPTY_ORGANISATION};
+use crate::Context;
 use crate::GeneralResult;
+
 use async_compat::CompatExt;
-use futures::io::AsyncReadExt;
-use futures::stream::TryStreamExt;
-use futures::stream::{self, StreamExt};
-use mongodb::bson::{doc, Document};
+use futures::stream::{StreamExt, TryStreamExt};
+use mongodb::bson::doc;
 use mongodb::error::Error as MongoDBError;
 use mongodb::error::ErrorKind;
 use mongodb::error::WriteFailure;
-use mongodb::options::ClientOptions;
-use mongodb::options::{
-    Acknowledgment, IndexOptions, ReadConcern, TransactionOptions, WriteConcern,
-};
+use mongodb::options::{ClientOptions, IndexOptions};
 pub use mongodb::Client;
-use mongodb::{ClientSession, Collection, IndexModel};
+use mongodb::IndexModel;
 use mongodb_gridfs::options::{GridFSBucketOptions, GridFSFindOptions, GridFSUploadOptions};
 use mongodb_gridfs::GridFSBucket;
 use serde::{Deserialize, Serialize};
@@ -25,7 +23,15 @@ use warp::reply::Response;
 
 const INTERNAL_DB: &'static str = "_internal";
 const BUCKET_COLLECTION: &'static str = "buckets";
-const BUCKET_BLACKLIST: [&'static str; 1] = ["_internal"];
+const KEYPAIRS_COLLECTION: &'static str = "keypairs";
+const BUCKET_BLACKLIST: [&'static str; 6] = [
+    INTERNAL_DB,
+    EMPTY_ORGANISATION,
+    ADMIN_ORGANISATION,
+    "config",
+    "admin",
+    "local",
+];
 
 #[derive(Debug)]
 struct CustomError {
@@ -34,6 +40,7 @@ struct CustomError {
 
 impl Reject for CustomError {}
 
+#[derive(Debug)]
 pub struct CreateBucketResult {
     created: bool,
     bucket: String,
@@ -78,6 +85,7 @@ impl warp::Reply for CreateBucketResult {
     }
 }
 
+#[derive(Debug)]
 pub struct DeleteBucketResult {
     bucket: String,
     message: Option<&'static str>,
@@ -108,6 +116,7 @@ impl warp::Reply for DeleteBucketResult {
     }
 }
 
+#[derive(Debug)]
 enum CreateObjectValidationError {
     BucketNotFound,
 }
@@ -120,6 +129,7 @@ impl std::fmt::Display for CreateObjectValidationError {
     }
 }
 
+#[derive(Debug)]
 pub struct CreateObjectResult {
     created: bool,
     bucket: String,
@@ -169,6 +179,7 @@ impl warp::Reply for CreateObjectResult {
     }
 }
 
+#[derive(Debug)]
 pub struct DeleteObjectResult {
     bucket: String,
     filename: String,
@@ -216,7 +227,7 @@ struct Bucket {
 
 pub async fn setup(client: &Client) -> GeneralResult<()> {
     let db = client.database(INTERNAL_DB);
-    let buckets = db.collection::<Bucket>("buckets");
+    let buckets = db.collection::<Bucket>(BUCKET_COLLECTION);
 
     let unique_index = IndexOptions::builder().unique(true).build();
     let index = IndexModel::builder()
@@ -224,6 +235,15 @@ pub async fn setup(client: &Client) -> GeneralResult<()> {
         .options(unique_index)
         .build();
     buckets.create_index(index, None).await?;
+
+    let keypairs = db.collection::<KeyPair>(KEYPAIRS_COLLECTION);
+
+    let unique_index = IndexOptions::builder().unique(true).build();
+    let index = IndexModel::builder()
+        .keys(doc! {"access": 1})
+        .options(unique_index)
+        .build();
+    keypairs.create_index(index, None).await?;
 
     Ok(())
 }
@@ -256,8 +276,9 @@ fn validate_bucket_name(bucket_name: &str) -> Result<(), CreateBucketResult> {
     Ok(())
 }
 
-async fn inner_create_bucket(client: Client, bucket_name: String) -> mongodb::error::Result<()> {
-    client
+async fn inner_create_bucket(context: Context, bucket_name: String) -> mongodb::error::Result<()> {
+    context
+        .client
         .database(INTERNAL_DB)
         .collection::<Bucket>(BUCKET_COLLECTION)
         .insert_one(
@@ -268,7 +289,7 @@ async fn inner_create_bucket(client: Client, bucket_name: String) -> mongodb::er
         )
         .await?;
 
-    let db = client.database("organisation_id");
+    let db = context.client.database(context.organisation_id());
     let buckets = db.collection::<()>(&format!("{}.files", bucket_name));
 
     let unique_index = IndexOptions::builder().unique(true).build();
@@ -282,7 +303,7 @@ async fn inner_create_bucket(client: Client, bucket_name: String) -> mongodb::er
 }
 
 pub async fn create_bucket<'a>(
-    client: Client,
+    context: Context,
     bucket_name: String,
 ) -> Result<CreateBucketResult, Rejection> {
     match validate_bucket_name(&bucket_name) {
@@ -290,7 +311,7 @@ pub async fn create_bucket<'a>(
         Err(e) => return Ok(e),
     };
 
-    let created = match inner_create_bucket(client, bucket_name.to_string()).await {
+    let created = match inner_create_bucket(context, bucket_name.to_string()).await {
         Ok(_) => true,
         // uniqueness error
         Err(MongoDBError { kind, .. })
@@ -333,15 +354,15 @@ async fn delete_gridfs_collections(
 }
 
 async fn inner_delete_bucket(
-    client: Client,
+    context: Context,
     bucket_name: &str,
     options: &crate::backend::DeleteBucketOptions,
 ) -> Result<Option<&'static str>, mongodb::error::Error> {
     if options.purge.unwrap_or(false) {
-        delete_gridfs_collections(&client, "organisation_id", bucket_name).await?;
+        delete_gridfs_collections(&context.client, context.organisation_id(), bucket_name).await?;
     } else {
         // check if bucket is empty
-        let db = client.database("organisation_id");
+        let db = context.client.database(context.organisation_id());
         let bucket_options = GridFSBucketOptions::builder()
             .bucket_name(bucket_name.to_string())
             .build();
@@ -354,11 +375,13 @@ async fn inner_delete_bucket(
         if let Some(_) = cursor.next().await {
             return Ok(Some("bucket is not empty"));
         } else {
-            delete_gridfs_collections(&client, "organisation_id", bucket_name).await?;
+            delete_gridfs_collections(&context.client, context.organisation_id(), bucket_name)
+                .await?;
         }
     }
 
-    client
+    context
+        .client
         .database(INTERNAL_DB)
         .collection::<Bucket>(BUCKET_COLLECTION)
         .delete_one(doc! { "name": bucket_name.to_string() }, None)
@@ -368,11 +391,11 @@ async fn inner_delete_bucket(
 }
 
 pub async fn delete_bucket(
-    client: Client,
+    context: Context,
     bucket_name: String,
     options: crate::backend::DeleteBucketOptions,
 ) -> Result<DeleteBucketResult, Rejection> {
-    match inner_delete_bucket(client, &bucket_name, &options).await {
+    match inner_delete_bucket(context, &bucket_name, &options).await {
         Ok(Some(message)) => {
             return Ok(DeleteBucketResult {
                 bucket: bucket_name,
@@ -394,17 +417,18 @@ pub async fn delete_bucket(
 }
 
 pub async fn create_object(
-    client: Client,
+    context: Context,
     bucket_name: String,
     object_name: String,
     content_type: String,
     buffer: impl futures::Stream<Item = Result<impl warp::Buf, warp::Error>>,
 ) -> Result<CreateObjectResult, Rejection> {
-    let buckets = client
+    let buckets = context
+        .client
         .database(INTERNAL_DB)
         .collection::<Bucket>(BUCKET_COLLECTION);
 
-    let bucket = match buckets
+    match buckets
         .find_one(
             doc! {
                 "name": bucket_name.to_string(),
@@ -429,7 +453,7 @@ pub async fn create_object(
         }
     };
 
-    let db = client.database("organisation_id");
+    let db = context.client.database(context.organisation_id());
     let bucket_options = GridFSBucketOptions::builder()
         .bucket_name(bucket_name.to_string())
         .build();
@@ -474,11 +498,11 @@ pub async fn create_object(
 }
 
 pub async fn get_object(
-    client: Client,
+    context: Context,
     bucket_name: String,
     object_name: String,
 ) -> Result<warp::reply::Response, Rejection> {
-    let db = client.database("organisation_id");
+    let db = context.client.database(context.organisation_id());
     let bucket_options = GridFSBucketOptions::builder()
         .bucket_name(bucket_name.to_string())
         .build();
@@ -504,7 +528,7 @@ pub async fn get_object(
         return Err(warp::reject::not_found());
     };
 
-    let (cursor, filename) = bucket
+    let (cursor, _filename) = bucket
         .open_download_stream_with_filename(id)
         .await
         .map_err(|e| {
@@ -519,11 +543,11 @@ pub async fn get_object(
 }
 
 pub async fn delete_object(
-    client: Client,
+    context: Context,
     bucket_name: String,
     object_name: String,
 ) -> Result<DeleteObjectResult, Rejection> {
-    let db = client.database("organisation_id");
+    let db = context.client.database(context.organisation_id());
     let bucket_options = GridFSBucketOptions::builder()
         .bucket_name(bucket_name.to_string())
         .build();
@@ -564,6 +588,29 @@ pub async fn delete_object(
         filename: object_name,
         message: None,
     })
+}
+
+pub async fn get_keypair_with_access_key(
+    client: Client,
+    access_key: String,
+) -> Result<KeyPair, String> {
+    let keypairs = client
+        .database(INTERNAL_DB)
+        .collection::<KeyPair>(KEYPAIRS_COLLECTION);
+
+    match keypairs
+        .find_one(
+            doc! {
+                "access": access_key.to_string(),
+            },
+            None,
+        )
+        .await
+    {
+        Ok(Some(keypair)) => Ok(keypair),
+        Ok(None) => Err(String::from("access key not found")),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 pub async fn make_client() -> crate::GeneralResult<Client> {

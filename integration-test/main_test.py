@@ -1,7 +1,25 @@
 # import pytest
 import requests
+import jwt
+from datetime import datetime
+from datetime import timedelta
 
 URL = "http://localhost:3030/api/basic"
+
+
+def admin_jwt(method, path):
+    return jwt.encode(
+        {
+            "jti": "123456",
+            "sub": "username",
+            "path": path,
+            "method": method,
+            "exp": datetime.utcnow() + timedelta(minutes=5),
+            "nbf": datetime.utcnow(),
+        },
+        "secret",
+        algorithm="HS256",
+    )
 
 
 def test_create_bucket():
@@ -93,3 +111,29 @@ def test_create_object():
 
     assert 200 == r.status_code
     assert {"bucket": "my_object_bucket", "info": "OK"} == r.json()
+
+
+def test_login_create_object():
+    url = URL + "/my_object_bucket"
+
+    jwt = admin_jwt("DELETE", "my_object_bucket")
+    requests.delete(url + "?purge=true", headers={"authorization": f"bearer {jwt}"})
+
+    jwt = admin_jwt("POST", "my_object_bucket")
+    r = requests.post(url, headers={"authorization": f"bearer {jwt}"})
+    assert 200 == r.status_code
+
+    jwt = admin_jwt("POST", "my_object_bucket/image.jpg")
+    with open("image.jpg", "rb") as f:
+        r = requests.post(
+            url + "/image.jpg",
+            data=f,
+            headers={"content-type": "image/jpeg", "authorization": f"bearer {jwt}"},
+        )
+    assert 200 == r.status_code
+    assert {
+        "bucket": "my_object_bucket",
+        "info": "OK",
+        "created": True,
+        "filename": "image.jpg",
+    } == r.json()

@@ -1,5 +1,4 @@
 const URL: &'static str = "http://localhost:3030/api/basic";
-use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Body;
 use std::path::Path;
@@ -31,13 +30,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_str()
         .ok_or("invalid filename")?;
 
-    let mut bar = ProgressBar::new(size);
+    let bar = ProgressBar::new(size);
     bar.set_style(ProgressStyle::with_template(
         "[{elapsed_precise}] [{bytes_per_sec:>12}] {bar:40.cyan/blue} {bytes:>7}/{total_bytes:7}",
     )?);
     let body = Body::wrap_stream(ReaderStream::new(bar.wrap_async_read(file)));
 
-    let res = client
+    client
         .post(format!("{}/{}/{}", URL, bucket, file_name))
         .body(body)
         .header("content-type", mime_type.essence_str())
