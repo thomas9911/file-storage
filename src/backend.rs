@@ -3,19 +3,21 @@ use serde::{Deserialize, Serialize};
 use warp::filters::path::Tail;
 use warp::Rejection;
 
-mod mongodb;
+pub mod mongodb;
 use crate::Context;
 
-#[derive(Debug, serde::Deserialize)]
+pub use self::mongodb as implementation;
+
+#[derive(Debug, Deserialize)]
 pub struct DeleteBucketOptions {
     purge: Option<bool>,
 }
 
-pub type Client = mongodb::Client;
-type CreateBucketResult = mongodb::CreateBucketResult;
-type DeleteBucketResult = mongodb::DeleteBucketResult;
-type CreateObjectResult = mongodb::CreateObjectResult;
-type DeleteObjectResult = mongodb::DeleteObjectResult;
+pub type Client = implementation::Client;
+type CreateBucketResult = implementation::CreateBucketResult;
+type DeleteBucketResult = implementation::DeleteBucketResult;
+type CreateObjectResult = implementation::CreateObjectResult;
+type DeleteObjectResult = implementation::DeleteObjectResult;
 
 pub const EMPTY_ORGANISATION: &str = "general";
 pub const ADMIN_ORGANISATION: &str = "admin_organisation";
@@ -72,11 +74,11 @@ fn check_auth(context: &Context) -> Result<(), Rejection> {
 }
 
 pub async fn setup(client: &Client) -> GeneralResult<()> {
-    mongodb::setup(client).await
+    implementation::setup(client).await
 }
 
 pub async fn make_client() -> GeneralResult<Client> {
-    mongodb::make_client().await
+    implementation::make_client().await
 }
 
 pub async fn create_bucket(
@@ -85,7 +87,7 @@ pub async fn create_bucket(
 ) -> Result<CreateBucketResult, Rejection> {
     context.path = bucket_name.to_string();
     check_auth(&context)?;
-    mongodb::create_bucket(context, bucket_name).await
+    implementation::create_bucket(context, bucket_name).await
 }
 
 pub async fn delete_bucket(
@@ -95,7 +97,7 @@ pub async fn delete_bucket(
 ) -> Result<DeleteBucketResult, Rejection> {
     context.path = bucket_name.to_string();
     check_auth(&context)?;
-    mongodb::delete_bucket(context, bucket_name, options).await
+    implementation::delete_bucket(context, bucket_name, options).await
 }
 
 pub async fn create_object(
@@ -108,7 +110,7 @@ pub async fn create_object(
     let object_name = object_name.as_str().to_string();
     context.path = format!("{}/{}", bucket_name, object_name);
     check_auth(&context)?;
-    mongodb::create_object(context, bucket_name, object_name, content_type, buffer).await
+    implementation::create_object(context, bucket_name, object_name, content_type, buffer).await
 }
 
 pub async fn get_object(
@@ -119,7 +121,7 @@ pub async fn get_object(
     let object_name = object_name.as_str().to_string();
     context.path = format!("{}/{}", bucket_name, object_name);
     check_auth(&context)?;
-    mongodb::get_object(context, bucket_name, object_name).await
+    implementation::get_object(context, bucket_name, object_name).await
 }
 
 pub async fn delete_object(
@@ -130,12 +132,12 @@ pub async fn delete_object(
     let object_name = object_name.as_str().to_string();
     context.path = format!("{}/{}", bucket_name, object_name);
     check_auth(&context)?;
-    mongodb::delete_object(context, bucket_name, object_name).await
+    implementation::delete_object(context, bucket_name, object_name).await
 }
 
 pub async fn get_keypair_with_access_key(
     client: Client,
     access_key: String,
 ) -> Result<KeyPair, String> {
-    mongodb::get_keypair_with_access_key(client, access_key).await
+    implementation::get_keypair_with_access_key(client, access_key).await
 }

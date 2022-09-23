@@ -15,7 +15,6 @@ use context::Context;
 async fn main() -> GeneralResult<()> {
     pretty_env_logger::init();
     let config = Config::global();
-    println!("{:?}", config);
 
     let client = backend::make_client().await?;
     backend::setup(&client).await?;
