@@ -76,7 +76,7 @@ pub fn basic_endpoint(client: Client) -> warp::filters::BoxedFilter<(impl warp::
         .and_then(crate::backend::delete_object);
 
     let get_object_endpoint = warp::any()
-        .and(with_base(client.clone(), &GET_METHOD))
+        .and(with_base(client, &GET_METHOD))
         .and(param())
         .and(tail())
         .and(warp::get())

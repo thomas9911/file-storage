@@ -15,7 +15,7 @@ async fn main() -> GeneralResult {
         ClientOptions::parse("mongodb://my_user:password123@localhost:27017/my_database").await?;
     let client = Client::with_options(client_options)?;
 
-    dbg!(client.list_databases(None, None).await);
+    println!("{:?}", client.list_databases(None, None).await);
 
     let db = client.database("my_database");
 
@@ -48,7 +48,7 @@ async fn get_file(bucket: &GridFSBucket, name: &str) -> GeneralResult {
 
     while let Some(doc) = cursor.next().await {
         // dbg!(&doc);
-        if let Err(e) = store_to_path(&bucket, "tmp_folder".into(), doc).await {
+        if let Err(e) = store_to_path(bucket, "tmp_folder".into(), doc).await {
             println!("error: {}", e)
         };
     }

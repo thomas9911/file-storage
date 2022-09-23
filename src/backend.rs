@@ -17,8 +17,8 @@ type DeleteBucketResult = mongodb::DeleteBucketResult;
 type CreateObjectResult = mongodb::CreateObjectResult;
 type DeleteObjectResult = mongodb::DeleteObjectResult;
 
-pub const EMPTY_ORGANISATION: &'static str = "general";
-pub const ADMIN_ORGANISATION: &'static str = "admin_organisation";
+pub const EMPTY_ORGANISATION: &str = "general";
+pub const ADMIN_ORGANISATION: &str = "admin_organisation";
 
 fn empty_organisation() -> String {
     String::from(EMPTY_ORGANISATION)

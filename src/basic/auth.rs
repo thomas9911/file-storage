@@ -21,7 +21,7 @@ fn b64_decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, String> {
     base64::decode_config(input, base64::URL_SAFE_NO_PAD).map_err(|e| e.to_string())
 }
 
-fn get_sub_from_jwt<'a>(jwt: &'a str) -> Result<String, String> {
+fn get_sub_from_jwt(jwt: &str) -> Result<String, String> {
     let mut iter = jwt.split('.');
     match (iter.next(), iter.next(), iter.next(), iter.next()) {
         (Some(_), Some(payload), Some(_), None) => {
@@ -70,7 +70,7 @@ impl Auth {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_required_spec_claims(&["exp", "sub", "nbf"]);
         let token_message = jsonwebtoken::decode::<Payload>(
-            &auth,
+            auth,
             &DecodingKey::from_secret(keypair.secret().as_bytes()),
             &validation,
         )
@@ -78,16 +78,12 @@ impl Auth {
 
         Ok(Auth {
             payload: token_message.claims,
-            keypair: keypair,
+            keypair,
         })
     }
 
     pub fn validate_request(&self, method: &str, path: &str) -> bool {
-        if self.payload.path == path && self.payload.method.to_ascii_uppercase() == method {
-            true
-        } else {
-            false
-        }
+        self.payload.path == path && self.payload.method.to_ascii_uppercase() == method
     }
 
     pub fn auth(&self) -> &Payload {

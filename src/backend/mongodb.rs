@@ -21,10 +21,10 @@ use warp::http::StatusCode;
 use warp::reject::{Reject, Rejection};
 use warp::reply::Response;
 
-const INTERNAL_DB: &'static str = "_internal";
-const BUCKET_COLLECTION: &'static str = "buckets";
-const KEYPAIRS_COLLECTION: &'static str = "keypairs";
-const BUCKET_BLACKLIST: [&'static str; 6] = [
+const INTERNAL_DB: &str = "_internal";
+const BUCKET_COLLECTION: &str = "buckets";
+const KEYPAIRS_COLLECTION: &str = "keypairs";
+const BUCKET_BLACKLIST: [&str; 6] = [
     INTERNAL_DB,
     EMPTY_ORGANISATION,
     ADMIN_ORGANISATION,
@@ -142,8 +142,7 @@ impl warp::Reply for CreateObjectResult {
         let message = if let Some(validation_error) = &self.validation_error {
             format!(
                 r#"{{"created": {}, "error": {:?}}}"#,
-                self.created,
-                validation_error.to_string()
+                self.created, validation_error
             )
         } else {
             let info = if self.created {
@@ -372,7 +371,7 @@ async fn inner_delete_bucket(
             .find(doc! {}, GridFSFindOptions::builder().limit(Some(1)).build())
             .await?;
 
-        if let Some(_) = cursor.next().await {
+        if cursor.next().await.is_some() {
             return Ok(Some("bucket is not empty"));
         } else {
             delete_gridfs_collections(&context.client, context.organisation_id(), bucket_name)
@@ -536,8 +535,7 @@ pub async fn get_object(
                 info: e.to_string(),
             })
         })?;
-    let stream =
-        warp::hyper::body::Body::wrap_stream(cursor.map::<Result<_, Infallible>, _>(|x| Ok(x)));
+    let stream = warp::hyper::body::Body::wrap_stream(cursor.map::<Result<_, Infallible>, _>(Ok));
 
     Ok(warp::reply::Response::new(stream))
 }

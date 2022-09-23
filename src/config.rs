@@ -1,4 +1,4 @@
-use crate::backend::{KeyPair, ADMIN_ORGANISATION, EMPTY_ORGANISATION};
+use crate::backend::{KeyPair, ADMIN_ORGANISATION};
 use serde::Deserialize;
 use tokio::sync::OnceCell;
 

@@ -25,8 +25,6 @@ impl Context {
             None
         };
 
-        log::warn!("auth {:?}", auth);
-
         Context {
             client,
             auth,
@@ -35,7 +33,7 @@ impl Context {
         }
     }
 
-    pub fn organisation_id<'a>(&'a self) -> &'a str {
+    pub fn organisation_id(&self) -> &str {
         self.auth
             .as_ref()
             .map(|x| x.organisation_id())
