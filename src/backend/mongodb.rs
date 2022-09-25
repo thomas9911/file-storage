@@ -1,3 +1,7 @@
+use crate::backend::types::{
+    raises, CreateBucketResult, CreateObjectResult, CreateObjectValidationError,
+    DeleteBucketResult, DeleteObjectResult,
+};
 use crate::backend::{KeyPair, ADMIN_ORGANISATION, EMPTY_ORGANISATION};
 use crate::Context;
 use crate::GeneralResult;
@@ -16,10 +20,7 @@ use mongodb_gridfs::GridFSBucket;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tokio_util::io::StreamReader;
-use warp::http::header::{HeaderValue, CONTENT_TYPE};
-use warp::http::StatusCode;
-use warp::reject::{Reject, Rejection};
-use warp::reply::Response;
+use warp::reject::Rejection;
 
 const INTERNAL_DB: &str = "_internal";
 const BUCKET_COLLECTION: &str = "buckets";
@@ -32,192 +33,6 @@ const BUCKET_BLACKLIST: [&str; 6] = [
     "admin",
     "local",
 ];
-
-#[derive(Debug)]
-struct CustomError {
-    info: String,
-}
-
-impl Reject for CustomError {}
-
-#[derive(Debug)]
-pub struct CreateBucketResult {
-    created: bool,
-    bucket: String,
-    validation_error: Option<String>,
-}
-
-impl warp::Reply for CreateBucketResult {
-    fn into_response(self) -> warp::reply::Response {
-        let is_validation_error = self.validation_error.is_some();
-        let message = if let Some(validation_error) = self.validation_error {
-            format!(
-                r#"{{"created": {}, "error": {:?}}}"#,
-                self.created, validation_error
-            )
-        } else {
-            let info = if self.created {
-                "OK"
-            } else {
-                "Bucket already exists"
-            };
-
-            format!(
-                r#"{{"bucket": {:?}, "created": {}, "info": {:?}}}"#,
-                self.bucket, self.created, info
-            )
-        };
-
-        let mut response = Response::new(message.into());
-        response
-            .headers_mut()
-            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-        if self.created {
-            *response.status_mut() = StatusCode::OK;
-        } else if !is_validation_error {
-            *response.status_mut() = StatusCode::CONFLICT;
-        } else {
-            *response.status_mut() = StatusCode::BAD_REQUEST;
-        }
-
-        response
-    }
-}
-
-#[derive(Debug)]
-pub struct DeleteBucketResult {
-    bucket: String,
-    message: Option<&'static str>,
-}
-
-impl warp::Reply for DeleteBucketResult {
-    fn into_response(self) -> warp::reply::Response {
-        let info = if let Some(message) = self.message {
-            message
-        } else {
-            "OK"
-        };
-
-        let message = format!(r#"{{"bucket": {:?}, "info": {:?}}}"#, self.bucket, info);
-
-        let mut response = Response::new(message.into());
-        response
-            .headers_mut()
-            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-        if self.message.is_some() {
-            *response.status_mut() = StatusCode::BAD_REQUEST;
-        } else {
-            *response.status_mut() = StatusCode::OK;
-        };
-
-        response
-    }
-}
-
-#[derive(Debug)]
-enum CreateObjectValidationError {
-    BucketNotFound,
-}
-
-impl std::fmt::Display for CreateObjectValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CreateObjectValidationError::BucketNotFound => write!(f, "Bucket not found"),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct CreateObjectResult {
-    created: bool,
-    bucket: String,
-    filename: String,
-    validation_error: Option<CreateObjectValidationError>,
-}
-
-impl warp::Reply for CreateObjectResult {
-    fn into_response(self) -> warp::reply::Response {
-        let message = if let Some(validation_error) = &self.validation_error {
-            format!(
-                r#"{{"created": {}, "error": {:?}}}"#,
-                self.created, validation_error
-            )
-        } else {
-            let info = if self.created {
-                "OK"
-            } else {
-                "Object already exists"
-            };
-
-            format!(
-                r#"{{"bucket": {:?}, "filename": {:?}, "created": {}, "info": {:?}}}"#,
-                self.bucket, self.filename, self.created, info
-            )
-        };
-
-        let mut response = Response::new(message.into());
-        response
-            .headers_mut()
-            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-        match self.validation_error {
-            None if self.created => {
-                *response.status_mut() = StatusCode::OK;
-            }
-            None => {
-                *response.status_mut() = StatusCode::CONFLICT;
-            }
-            Some(CreateObjectValidationError::BucketNotFound) => {
-                *response.status_mut() = StatusCode::NOT_FOUND;
-            }
-        }
-
-        response
-    }
-}
-
-#[derive(Debug)]
-pub struct DeleteObjectResult {
-    bucket: String,
-    filename: String,
-    message: Option<&'static str>,
-}
-
-impl warp::Reply for DeleteObjectResult {
-    fn into_response(self) -> warp::reply::Response {
-        let info = if let Some(message) = self.message {
-            message
-        } else {
-            "OK"
-        };
-
-        let message = format!(
-            r#"{{"bucket": {:?}, "filename": {:?}, "info": {:?}}}"#,
-            self.bucket, self.filename, info
-        );
-
-        let mut response = Response::new(message.into());
-        response
-            .headers_mut()
-            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-        match self.message {
-            Some("object not found") => {
-                *response.status_mut() = StatusCode::NOT_FOUND;
-            }
-            Some(_) => {
-                *response.status_mut() = StatusCode::BAD_REQUEST;
-            }
-            None => {
-                *response.status_mut() = StatusCode::OK;
-            }
-        }
-
-        response
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Bucket {
@@ -321,11 +136,7 @@ pub async fn create_bucket<'a>(
         {
             false
         }
-        Err(e) => {
-            return Err(warp::reject::custom(CustomError {
-                info: e.kind.to_string(),
-            }))
-        }
+        Err(e) => return Err(raises(e.kind.to_string())),
     };
 
     Ok(CreateBucketResult {
@@ -402,11 +213,7 @@ pub async fn delete_bucket(
             })
         }
         Ok(_) => (),
-        Err(e) => {
-            return Err(warp::reject::custom(CustomError {
-                info: e.kind.to_string(),
-            }))
-        }
+        Err(e) => return Err(raises(e.kind.to_string())),
     };
 
     Ok(DeleteBucketResult {
@@ -445,11 +252,7 @@ pub async fn create_object(
                 validation_error: Some(CreateObjectValidationError::BucketNotFound),
             })
         }
-        Err(e) => {
-            return Err(warp::reject::custom(CustomError {
-                info: e.kind.to_string(),
-            }))
-        }
+        Err(e) => return Err(raises(e.kind.to_string())),
     };
 
     let db = context.client.database(context.organisation_id());
@@ -481,11 +284,7 @@ pub async fn create_object(
         {
             false
         }
-        Err(e) => {
-            return Err(warp::reject::custom(CustomError {
-                info: e.kind.to_string(),
-            }))
-        }
+        Err(e) => return Err(raises(e.kind.to_string())),
     };
 
     Ok(CreateObjectResult {
@@ -513,11 +312,7 @@ pub async fn get_object(
             GridFSFindOptions::builder().limit(Some(1)).build(),
         )
         .await
-        .map_err(|e| {
-            warp::reject::custom(CustomError {
-                info: e.to_string(),
-            })
-        })?;
+        .map_err(|e| raises(e.to_string()))?;
 
     let id = if let Some(Ok(object_doc)) = cursor.next().await {
         object_doc
@@ -530,11 +325,7 @@ pub async fn get_object(
     let (cursor, _filename) = bucket
         .open_download_stream_with_filename(id)
         .await
-        .map_err(|e| {
-            warp::reject::custom(CustomError {
-                info: e.to_string(),
-            })
-        })?;
+        .map_err(|e| raises(e.to_string()))?;
     let stream = warp::hyper::body::Body::wrap_stream(cursor.map::<Result<_, Infallible>, _>(Ok));
 
     Ok(warp::reply::Response::new(stream))
@@ -557,11 +348,7 @@ pub async fn delete_object(
             GridFSFindOptions::builder().limit(Some(1)).build(),
         )
         .await
-        .map_err(|e| {
-            warp::reject::custom(CustomError {
-                info: e.to_string(),
-            })
-        })?;
+        .map_err(|e| raises(e.to_string()))?;
 
     let id = if let Some(Ok(object_doc)) = cursor.next().await {
         object_doc
@@ -575,11 +362,7 @@ pub async fn delete_object(
         });
     };
 
-    bucket.delete(id).await.map_err(|e| {
-        warp::reject::custom(CustomError {
-            info: e.to_string(),
-        })
-    })?;
+    bucket.delete(id).await.map_err(|e| raises(e.to_string()))?;
 
     Ok(DeleteObjectResult {
         bucket: bucket_name,

@@ -4,7 +4,11 @@ use warp::filters::path::Tail;
 use warp::Rejection;
 
 pub mod mongodb;
+pub mod types;
+
 use crate::Context;
+
+use types::{CreateBucketResult, CreateObjectResult, DeleteBucketResult, DeleteObjectResult};
 
 pub use self::mongodb as implementation;
 
@@ -14,10 +18,6 @@ pub struct DeleteBucketOptions {
 }
 
 pub type Client = implementation::Client;
-type CreateBucketResult = implementation::CreateBucketResult;
-type DeleteBucketResult = implementation::DeleteBucketResult;
-type CreateObjectResult = implementation::CreateObjectResult;
-type DeleteObjectResult = implementation::DeleteObjectResult;
 
 pub const EMPTY_ORGANISATION: &str = "general";
 pub const ADMIN_ORGANISATION: &str = "admin_organisation";
